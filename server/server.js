@@ -70,47 +70,31 @@ wss.on("connection", (ws) => {
 
   ws.on("message", async (data) => {
 
-    try {
+  try {
 
-      const parsed =
-        JSON.parse(data.toString());
+    const parsed =
+      JSON.parse(data.toString());
 
-      const message = parsed.message;
+    const message =
+      parsed.message;
 
-      // normalize for keyword checks
-      const lowerMessage = String(message || "").toLowerCase();
+    conversationHistory.push({
+      role: "user",
+      text: message,
+    });
 
-      // react to reactor/core mentions
-      if (
-        lowerMessage.includes("reactor") ||
-        lowerMessage.includes("core")
-      ) {
-        emotionalState.reactorStability -= 15;
-      }
+    const recentHistory =
+      conversationHistory.slice(-4);
 
-      // clamp reactor stability between 0 and 100
-      emotionalState.reactorStability = Math.max(
-        0,
-        Math.min(100, emotionalState.reactorStability)
-      );
+    const historyText =
+      recentHistory
+        .map(
+          (msg) =>
+            `${msg.role}: ${msg.text}`
+        )
+        .join("\n");
 
-      conversationHistory.push({
-        role: "user",
-        text: message,
-      });
-
-      const recentHistory =
-        conversationHistory.slice(-4);
-
-      const historyText =
-        recentHistory
-          .map(
-            (msg) =>
-              `${msg.role}: ${msg.text}`
-          )
-          .join("\n");
-
-      const prompt = `
+    const prompt = `
 You are simulating multiple spaceship crew members.
 
 ${characters
@@ -127,11 +111,11 @@ Style: ${c.style}
 Danger:
 ${emotionalState.dangerLevel}
 
-Reactor Stability:
-${emotionalState.reactorStability}
-
 Stress:
 ${emotionalState.crewStress}
+
+Reactor Stability:
+${emotionalState.reactorStability}
 
 Conversation:
 ${historyText}
@@ -139,62 +123,74 @@ ${historyText}
 Reply in JSON array format.
 `;
 
-      const result =
-        await model.generateContent(
-          prompt
-        );
+    const result =
+      await model.generateContentStream(
+        prompt
+      );
 
-      const response =
-        await result.response;
+    let fullText = "";
 
-      let rawReply =
-        response.text();
+    for await (
+      const chunk of result.stream
+    ) {
 
-      rawReply = rawReply
-        .replace(/```json/g, "")
-        .replace(/```/g, "")
-        .trim();
+      const chunkText =
+        chunk.text();
 
-      let parsedReply = [];
-
-      try {
-
-        parsedReply =
-          JSON.parse(rawReply);
-
-      } catch {
-
-        parsedReply = [
-          {
-            speaker:
-              "Captain Aris",
-            text: rawReply,
-          },
-        ];
-
-      }
-
-      conversationHistory.push({
-        role: "assistant",
-        text: JSON.stringify(
-          parsedReply
-        ),
-      });
+      fullText += chunkText;
 
       ws.send(
         JSON.stringify({
-          type: "reply",
-          data: parsedReply,
+          type: "stream",
+          chunk: chunkText,
         })
       );
 
-    } catch (error) {
+    }
 
-      console.log(error);
+    fullText = fullText
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .trim();
+
+    let parsedReply = [];
+
+    try {
+
+      parsedReply =
+        JSON.parse(fullText);
+
+    } catch {
+
+      parsedReply = [
+        {
+          speaker:
+            "Captain Aris",
+          text: fullText,
+        },
+      ];
 
     }
 
-  });
+    conversationHistory.push({
+      role: "assistant",
+      text: JSON.stringify(
+        parsedReply
+      ),
+    });
+
+    ws.send(
+      JSON.stringify({
+        type: "done",
+        data: parsedReply,
+      })
+    );
+
+  } catch (error) {
+
+    console.log(error);
+
+  }
 
 });
 server.listen(5000, () => {

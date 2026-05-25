@@ -30,7 +30,8 @@ export default function Home() {
 
   const recognitionRef = useRef<any>(null);
   const audioRef = useRef<any>(null);
-  const socketRef = useRef<any>(null);
+  const [streamText, setStreamText] =
+  useState("");
 
   const characterVoices: any = {
     "Captain Aris": "jUjRbhZWoMK4aDciW36V",
@@ -91,35 +92,45 @@ export default function Home() {
   useEffect(() => {
     socketRef.current = new WebSocket("ws://localhost:5000");
 
-    socketRef.current.onmessage = async (event: any) => {
-      const parsed = JSON.parse(event.data);
+    socketRef.current.onmessage =
+  async (event: any) => {
 
-      if (parsed.type === "reply") {
-        setAiReplies(parsed.data);
-        setDangerLevel((prev) => {
+    const parsed =
+      JSON.parse(event.data);
 
-  const next =
-    Math.min(100, prev + 5);
+    if (
+      parsed.type === "stream"
+    ) {
 
-  if (next > 70) {
-    setSystemMode("CRITICAL");
-  } else if (next > 40) {
-    setSystemMode("WARNING");
-  } else {
-    setSystemMode("NORMAL");
-  }
+      setStreamText(
+        (prev) =>
+          prev + parsed.chunk
+      );
 
-  return next;
-});
+    }
 
-        if (parsed.data.length > 0) {
-          const speaker = parsed.data[0].speaker;
-          const text = parsed.data[0].text;
-          speak(speaker, text);
-        }
-        setProcessing(false);
+    if (
+      parsed.type === "done"
+    ) {
+
+      setAiReplies(parsed.data);
+
+      setStreamText("");
+
+      if (
+        parsed.data.length > 0
+      ) {
+
+        speak(
+          parsed.data[0].speaker,
+          parsed.data[0].text
+        );
+
       }
-    };
+
+    }
+
+  };
 
     return () => {
       socketRef.current?.close();
@@ -302,6 +313,18 @@ export default function Home() {
       >
         STOP
       </button>
+
+      {streamText && (
+
+        <div className="bg-cyan-500/10 border border-cyan-400/30 p-4 rounded-2xl mb-4 z-10 max-w-3xl w-full">
+
+          <p className="text-cyan-300 font-bold mb-2">TRANSMITTING...</p>
+
+          <p className="text-xl whitespace-pre-wrap">{streamText}</p>
+
+        </div>
+
+      )}
 
       <div className="z-10 mt-12 max-w-3xl w-full space-y-4">
 
