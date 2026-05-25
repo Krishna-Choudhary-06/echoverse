@@ -7,8 +7,71 @@ export default function Home() {
   const [userText, setUserText] = useState("");
   const [aiReply, setAiReply] = useState("");
   const [listening, setListening] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
 
   const recognitionRef = useRef<any>(null);
+  const speak = async (text: string) => {
+  try {
+
+    if (speaking) return;
+
+    setSpeaking(true);
+
+    const cleanedText = text
+      .replace(/\\*/g, "")
+      .replace(/#/g, "")
+      .slice(0, 200);
+
+    const response = await fetch(
+      "https://api.elevenlabs.io/v1/text-to-speech/YOUR_VOICE_ID",
+      {
+        method: "POST",
+        headers: {
+          Accept: "audio/mpeg",
+          "Content-Type": "application/json",
+          "xi-api-key":
+            process.env
+              .NEXT_PUBLIC_ELEVENLABS_API_KEY || "",
+        },
+        body: JSON.stringify({
+          text: cleanedText,
+          model_id: "eleven_multilingual_v2",
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      console.log(
+        "ElevenLabs request failed"
+      );
+
+      setSpeaking(false);
+
+      return;
+    }
+
+    const audioBlob =
+      await response.blob();
+
+    const audioUrl =
+      URL.createObjectURL(audioBlob);
+
+    const audio = new Audio(audioUrl);
+
+    audio.onended = () => {
+      setSpeaking(false);
+    };
+
+    await audio.play();
+
+  } catch (error) {
+
+    console.log(error);
+
+    setSpeaking(false);
+
+  }
+};
 
   const startListening = () => {
     const SpeechRecognition =
@@ -26,8 +89,14 @@ export default function Home() {
     recognition.continuous = true;
 
     recognition.onstart = () => {
-      setListening(true);
-    };
+
+  if (speaking) {
+    recognition.stop();
+    return;
+  }
+
+  setListening(true);
+};
 
     recognition.onresult = async (event: any) => {
       let transcript = "";
@@ -48,6 +117,7 @@ export default function Home() {
         });
 
         setAiReply(res.data.reply);
+        speak(res.data.reply);
       } catch (error) {
         console.log(error);
       }
