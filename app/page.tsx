@@ -8,6 +8,8 @@ export default function Home() {
   const [aiReply, setAiReply] = useState("");
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [processing, setProcessing] =
+  useState(false);
 
   const recognitionRef = useRef<any>(null);
   const speak = async (text: string) => {
@@ -59,8 +61,14 @@ export default function Home() {
     const audio = new Audio(audioUrl);
 
     audio.onended = () => {
-      setSpeaking(false);
-    };
+
+  setSpeaking(false);
+
+  setTimeout(() => {
+    startListening();
+  }, 400);
+
+};
 
     await audio.play();
 
@@ -86,7 +94,7 @@ export default function Home() {
     const recognition = new SpeechRecognition();
     recognition.lang = "en-US";
     recognition.interimResults = true;
-    recognition.continuous = true;
+    recognition.continuous = false;
 
     recognition.onstart = () => {
 
@@ -100,7 +108,7 @@ export default function Home() {
 
     recognition.onresult = async (event: any) => {
       let transcript = "";
-
+      if (processing || speaking) return;
       for (let i = event.resultIndex; i < event.results.length; i++) {
         transcript += event.results[i][0].transcript;
       }
@@ -112,20 +120,31 @@ export default function Home() {
       if (!isFinal) return;
 
       try {
+        setProcessing(true);
         const res = await axios.post("http://localhost:5000/chat", {
           message: transcript.slice(0, 150),
         });
 
         setAiReply(res.data.reply);
         speak(res.data.reply);
+        setProcessing(false);
       } catch (error) {
         console.log(error);
       }
     };
 
     recognition.onend = () => {
-      setListening(false);
-    };
+
+  setListening(false);
+
+  if (!speaking && !processing) {
+
+    setTimeout(() => {
+      startListening();
+    }, 500);
+
+  }
+};
 
     recognition.start();
     recognitionRef.current = recognition;
@@ -139,6 +158,20 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-8">
       <h1 className="text-5xl font-bold mb-10">EchoVerse</h1>
+      <div className="mb-6 text-zinc-400">
+
+  {listening && "Listening..."}
+
+  {processing && "Thinking..."}
+
+  {speaking && "Speaking..."}
+
+  {!listening &&
+    !processing &&
+    !speaking &&
+    "Idle"}
+
+</div>
 
       <div className="flex gap-4">
         <button
