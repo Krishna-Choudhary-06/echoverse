@@ -5,7 +5,8 @@ import axios from "axios";
 
 export default function Home() {
   const [userText, setUserText] = useState("");
-  const [aiReply, setAiReply] = useState("");
+  const [aiReplies, setAiReplies] =
+  useState<any[]>([]);
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [processing, setProcessing] =
@@ -13,73 +14,30 @@ export default function Home() {
 
   const recognitionRef = useRef<any>(null);
   const speak = async (text: string) => {
-  try {
+    try {
+      if (speaking) return;
+      setSpeaking(true);
 
-    if (speaking) return;
+      // ElevenLabs is blocked, skip audio and just restart listening
+      const cleanedText = text
+        .replace(/\*/g, "")
+        .replace(/#/g, "")
+        .slice(0, 200);
 
-    setSpeaking(true);
+      console.log("Speaking:", cleanedText);
 
-    const cleanedText = text
-      .replace(/\\*/g, "")
-      .replace(/#/g, "")
-      .slice(0, 200);
-
-    const response = await fetch(
-      "https://api.elevenlabs.io/v1/text-to-speech/YOUR_VOICE_ID",
-      {
-        method: "POST",
-        headers: {
-          Accept: "audio/mpeg",
-          "Content-Type": "application/json",
-          "xi-api-key":
-            process.env
-              .NEXT_PUBLIC_ELEVENLABS_API_KEY || "",
-        },
-        body: JSON.stringify({
-          text: cleanedText,
-          model_id: "eleven_multilingual_v2",
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      console.log(
-        "ElevenLabs request failed"
-      );
+      // Simulate speech delay
+      await new Promise((resolve) => setTimeout(resolve, 1000));
 
       setSpeaking(false);
-
-      return;
+      setTimeout(() => {
+        startListening();
+      }, 400);
+    } catch (error) {
+      console.log(error);
+      setSpeaking(false);
     }
-
-    const audioBlob =
-      await response.blob();
-
-    const audioUrl =
-      URL.createObjectURL(audioBlob);
-
-    const audio = new Audio(audioUrl);
-
-    audio.onended = () => {
-
-  setSpeaking(false);
-
-  setTimeout(() => {
-    startListening();
-  }, 400);
-
-};
-
-    await audio.play();
-
-  } catch (error) {
-
-    console.log(error);
-
-    setSpeaking(false);
-
-  }
-};
+  };
 
   const startListening = () => {
     const SpeechRecognition =
@@ -125,8 +83,14 @@ export default function Home() {
           message: transcript.slice(0, 150),
         });
 
-        setAiReply(res.data.reply);
-        speak(res.data.reply);
+        setAiReplies(res.data.reply);
+        if (res.data.reply.length > 0) {
+
+  speak(
+    `${res.data.reply[0].speaker} says ${res.data.reply[0].text}`
+  );
+
+}
         setProcessing(false);
       } catch (error) {
         console.log(error);
@@ -196,7 +160,26 @@ export default function Home() {
         <p className="text-2xl mb-8 min-h-12">{userText}</p>
 
         <p className="text-zinc-400 text-lg">AI:</p>
-        <p className="text-3xl font-semibold min-h-16">{aiReply}</p>
+        <div className="space-y-4">
+
+  {aiReplies.map((reply, index) => (
+
+    <div
+      key={index}
+      className="bg-zinc-900 p-4 rounded-xl"
+    >
+      <p className="text-blue-400 font-bold">
+        {reply.speaker}
+      </p>
+
+      <p className="text-2xl">
+        {reply.text}
+      </p>
+    </div>
+
+  ))}
+
+</div>
       </div>
     </main>
   );

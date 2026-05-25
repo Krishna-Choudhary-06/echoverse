@@ -20,36 +20,36 @@ const model = genAI.getGenerativeModel({
 
 let conversationHistory = [];
 
-const characters = {
-  captain: {
+const characters = [
+  {
     name: "Captain Aris",
     role: "Spaceship Commander",
     personality:
-      "Aggressive, tactical, highly intelligent",
-    speakingStyle:
-      "Short military-style responses",
+      "Aggressive, tactical, military leader",
+    style:
+      "Short commanding responses",
   },
 
-  engineer: {
+  {
     name: "Nova",
-    role: "Ship Engineer",
+    role: "Chief Engineer",
     personality:
-      "Anxious but genius-level engineer",
-    speakingStyle:
+      "Nervous genius engineer",
+    style:
       "Fast technical explanations",
   },
 
-  doctor: {
+  {
     name: "Dr. Lyra",
     role: "Medical Officer",
     personality:
-      "Calm, empathetic, analytical",
-    speakingStyle:
-      "Gentle and emotionally intelligent",
+      "Calm and empathetic",
+    style:
+      "Gentle analytical responses",
   },
-};
+];
 
-const character = characters.captain;
+
 
 app.post("/chat", async (req, res) => {
   try {
@@ -72,27 +72,39 @@ app.post("/chat", async (req, res) => {
       .join("\n");
 
     const prompt = `
-You are ${character.name}.
+You are simulating multiple spaceship crew members.
 
-Role:
-${character.role}
+Characters:
 
-Personality:
-${character.personality}
-
-Speaking Style:
-${character.speakingStyle}
+${characters
+  .map(
+    (c) => `
+Name: ${c.name}
+Role: ${c.role}
+Personality: ${c.personality}
+Style: ${c.style}
+`
+  )
+  .join("\n")}
 
 Rules:
-- Stay in character
+- Stay immersive
 - Never mention AI
 - Keep replies short
-- Sound natural
+- Maximum 1 sentence each
+- Only the most relevant characters should respond
 
 Conversation:
 ${historyText}
 
-Reply as ${character.name}.
+Respond ONLY in this JSON format:
+
+[
+  {
+    "speaker": "Character Name",
+    "text": "dialogue"
+  }
+]
 `;
 
     const result =
@@ -100,15 +112,37 @@ Reply as ${character.name}.
 
     const response = await result.response;
 
-    const reply = response.text();
+    let rawReply = response.text();
+
+rawReply = rawReply
+  .replace(/```json/g, "")
+  .replace(/```/g, "")
+  .trim();
+
+let parsedReply = [];
+
+try {
+
+  parsedReply = JSON.parse(rawReply);
+
+} catch {
+
+  parsedReply = [
+    {
+      speaker: "Captain Aris",
+      text: rawReply,
+    },
+  ];
+
+}
 
     conversationHistory.push({
       role: "assistant",
-      text: reply,
+      text: JSON.stringify(parsedReply),
     });
 
     res.json({
-      reply,
+      reply: parsedReply,
     });
 
   } catch (error) {
