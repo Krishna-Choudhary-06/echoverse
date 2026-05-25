@@ -4,6 +4,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useMemo,
 } from "react";
 
 export default function Home() {
@@ -13,6 +14,16 @@ export default function Home() {
   const [speaking, setSpeaking] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [dangerLevel, setDangerLevel] = useState(0);
+
+  const particles = useMemo(() => {
+    return Array.from({ length: 40 }).map((_, i) => ({
+      id: i,
+      left: Math.random() * 100,
+      top: Math.random() * 100,
+      delay: Math.random() * 5,
+      size: Math.random() * 4 + 2,
+    }));
+  }, []);
 
   const recognitionRef = useRef<any>(null);
   const audioRef = useRef<any>(null);
@@ -182,77 +193,129 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-8">
-      <h1 className="text-5xl font-bold mb-10">EchoVerse</h1>
-      <div className="mb-6 text-zinc-400">
-        {listening && "Listening..."}
-        {processing && "Thinking..."}
-        {speaking && `Speaking as ${aiReplies[0]?.speaker || ""}...`}
-        {!listening && !processing && !speaking && "Idle"}
+    <main className="relative min-h-screen overflow-hidden bg-black text-white flex flex-col items-center justify-center p-8">
+
+      <div className="absolute inset-0 overflow-hidden">
+
+        {particles.map((p) => (
+          <div
+            key={p.id}
+            className="absolute rounded-full bg-cyan-400/20 animate-pulse"
+            style={{
+              left: `${p.left}%`,
+              top: `${p.top}%`,
+              width: `${p.size}px`,
+              height: `${p.size}px`,
+              animationDelay: `${p.delay}s`,
+            }}
+          />
+        ))}
+
       </div>
 
-      <div className="w-full max-w-xl mb-6">
+      <div className="absolute inset-0 bg-gradient-to-b from-cyan-500/10 via-transparent to-red-500/10" />
+
+      <h1 className="text-6xl font-black tracking-widest mb-4 z-10">
+        EchoVerse
+      </h1>
+
+      <div className="mb-6 text-cyan-300 z-10">
+
+        {listening && "Listening..."}
+
+        {processing && "Thinking..."}
+
+        {speaking &&
+          `Speaking as ${
+            aiReplies[0]?.speaker || ""
+          }...`}
+
+        {!listening &&
+          !processing &&
+          !speaking &&
+          "Idle"}
+
+      </div>
+
+      <div className="w-full max-w-xl mb-6 z-10">
+
         <p className="text-red-400 mb-2">
           Danger Level
         </p>
 
         <div className="w-full bg-zinc-800 h-4 rounded-full overflow-hidden">
+
           <div
             className="bg-red-500 h-full transition-all duration-500"
             style={{
               width: `${dangerLevel}%`,
             }}
           />
+
         </div>
+
       </div>
 
-      <div className="flex gap-4">
-        <button
-          onClick={startListening}
-          disabled={listening}
-          className="bg-white text-black px-8 py-4 rounded-full text-xl font-bold hover:bg-gray-200 disabled:opacity-50"
-        >
-          {listening ? "Listening..." : "Start Talking"}
-        </button>
-
-        <button
-          onClick={stopListening}
-          disabled={!listening}
-          className="bg-red-500 text-white px-6 py-4 rounded-full text-xl font-bold hover:bg-red-600 disabled:opacity-50"
-        >
-          Stop
-        </button>
-      </div>
-
-      <div className="mt-10 max-w-2xl text-center">
-        <p className="text-zinc-400 text-lg">You:</p>
-        <p className="text-2xl mb-8 min-h-12">{userText}</p>
-
-        <p className="text-zinc-400 text-lg">AI:</p>
-        <div className="space-y-4">
-
-      {aiReplies.map((reply, index) => (
-
-    <div key={index} className="bg-zinc-900 p-4 rounded-xl">
-      <p
-        className={`font-bold ${
-          reply.speaker === "Captain Aris"
-            ? "text-red-400"
-            : reply.speaker === "Nova"
-            ? "text-yellow-400"
-            : "text-green-400"
-        }`}
+      <button
+        onClick={startListening}
+        className="z-10 bg-cyan-400 hover:bg-cyan-300 text-black px-10 py-5 rounded-full text-xl font-black transition-all duration-300 shadow-[0_0_40px_rgba(34,211,238,0.6)]"
       >
-        {reply.speaker}
-      </p>
+        TALK
+      </button>
 
-      <p className="text-2xl">{reply.text}</p>
-    </div>
+      <button
+        onClick={() => {
+          recognitionRef.current?.stop();
+          setListening(false);
+        }}
+        className="z-10 mt-4 bg-red-500 hover:bg-red-400 px-6 py-3 rounded-xl font-bold"
+      >
+        STOP
+      </button>
 
-  ))}
+      <div className="z-10 mt-12 max-w-3xl w-full space-y-4">
 
-</div>
+        <div className="bg-zinc-900/70 border border-cyan-400/20 p-4 rounded-2xl backdrop-blur-md">
+
+          <p className="text-cyan-400 font-bold mb-2">
+            USER
+          </p>
+
+          <p className="text-xl">
+            {userText}
+          </p>
+
+        </div>
+
+        {aiReplies.map((reply, index) => (
+
+          <div
+            key={index}
+            className="bg-zinc-900/70 border border-white/10 p-5 rounded-2xl backdrop-blur-md"
+          >
+
+            <p
+              className={`font-black mb-2 text-lg ${
+                reply.speaker === "Captain Aris"
+                  ? "text-red-400"
+                  : reply.speaker === "Nova"
+                  ? "text-yellow-400"
+                  : "text-green-400"
+              }`}
+            >
+              {reply.speaker}
+            </p>
+
+            <p className="text-2xl leading-relaxed">
+              {reply.text}
+            </p>
+
+          </div>
+
+        ))}
+
       </div>
+
     </main>
   );
 }
