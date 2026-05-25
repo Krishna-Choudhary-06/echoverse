@@ -1,4 +1,6 @@
 import express from "express";
+import { WebSocketServer } from "ws";
+import http from "http";
 import cors from "cors";
 import dotenv from "dotenv";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -56,58 +58,44 @@ const characters = [
 
 
 
-app.post("/chat", async (req, res) => {
-  try {
 
-    const { message } = req.body;
-    const lowerMessage =
-  message.toLowerCase();
+const server = http.createServer(app);
 
-if (
-  lowerMessage.includes("attack") ||
-  lowerMessage.includes("danger") ||
-  lowerMessage.includes("explode")
-) {
-  emotionalState.dangerLevel += 15;
-  emotionalState.crewStress += 10;
-}
+const wss = new WebSocketServer({
+  server,
+});
+wss.on("connection", (ws) => {
 
-if (
-  lowerMessage.includes("calm") ||
-  lowerMessage.includes("safe")
-) {
-  emotionalState.crewStress -= 10;
-}
+  console.log("Client connected");
 
-emotionalState.dangerLevel = Math.max(
-  0,
-  Math.min(100, emotionalState.dangerLevel)
-);
+  ws.on("message", async (data) => {
 
-emotionalState.crewStress = Math.max(
-  0,
-  Math.min(100, emotionalState.crewStress)
-);
+    try {
 
-    conversationHistory.push({
-      role: "user",
-      text: message,
-    });
+      const parsed =
+        JSON.parse(data.toString());
 
-    const recentHistory =
-      conversationHistory.slice(-6);
+      const message =
+        parsed.message;
 
-    const historyText = recentHistory
-      .map(
-        (msg) =>
-          `${msg.role}: ${msg.text}`
-      )
-      .join("\n");
+      conversationHistory.push({
+        role: "user",
+        text: message,
+      });
 
-    const prompt = `
+      const recentHistory =
+        conversationHistory.slice(-4);
+
+      const historyText =
+        recentHistory
+          .map(
+            (msg) =>
+              `${msg.role}: ${msg.text}`
+          )
+          .join("\n");
+
+      const prompt = `
 You are simulating multiple spaceship crew members.
-
-Characters:
 
 ${characters
   .map(
@@ -120,89 +108,78 @@ Style: ${c.style}
   )
   .join("\n")}
 
-  Current Emotional State:
-
-Danger Level:
+Danger:
 ${emotionalState.dangerLevel}
 
-Crew Stress:
+Stress:
 ${emotionalState.crewStress}
 
-Trust Level:
-${emotionalState.trustLevel}
-Rules:
-- Stay immersive
-- Never mention AI
-- Keep replies short
-- Maximum 1 sentence each
-- React emotionally to danger and stress
-- Characters may disagree with each other
-- Under high danger, responses become urgent
-- Under high stress, engineer may panic
-- Captain prioritizes survival
-- Doctor prioritizes crew safety
 Conversation:
 ${historyText}
 
-Respond ONLY in this JSON format:
-
-[
-  {
-    "speaker": "Character Name",
-    "text": "dialogue"
-  }
-]
+Reply in JSON array format.
 `;
 
-    const result =
-      await model.generateContent(prompt);
+      const result =
+        await model.generateContent(
+          prompt
+        );
 
-    const response = await result.response;
+      const response =
+        await result.response;
 
-    let rawReply = response.text();
+      let rawReply =
+        response.text();
 
-rawReply = rawReply
-  .replace(/```json/g, "")
-  .replace(/```/g, "")
-  .trim();
+      rawReply = rawReply
+        .replace(/```json/g, "")
+        .replace(/```/g, "")
+        .trim();
 
-let parsedReply = [];
+      let parsedReply = [];
 
-try {
+      try {
 
-  parsedReply = JSON.parse(rawReply);
+        parsedReply =
+          JSON.parse(rawReply);
 
-} catch {
+      } catch {
 
-  parsedReply = [
-    {
-      speaker: "Captain Aris",
-      text: rawReply,
-    },
-  ];
+        parsedReply = [
+          {
+            speaker:
+              "Captain Aris",
+            text: rawReply,
+          },
+        ];
 
-}
+      }
 
-    conversationHistory.push({
-      role: "assistant",
-      text: JSON.stringify(parsedReply),
-    });
+      conversationHistory.push({
+        role: "assistant",
+        text: JSON.stringify(
+          parsedReply
+        ),
+      });
 
-    res.json({
-      reply: parsedReply,
-    });
+      ws.send(
+        JSON.stringify({
+          type: "reply",
+          data: parsedReply,
+        })
+      );
 
-  } catch (error) {
+    } catch (error) {
 
-    console.log(error);
+      console.log(error);
 
-    res.status(500).json({
-      error: "Something went wrong",
-    });
+    }
 
-  }
+  });
+
 });
-
-app.listen(5000, () => {
-  console.log("Server running on port 5000");
+server.listen(5000, () => {
+  console.log(
+    "WebSocket server running on port 5000"
+  );
 });

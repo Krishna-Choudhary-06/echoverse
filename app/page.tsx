@@ -1,8 +1,45 @@
 "use client";
 
-import { useRef, useState } from "react";
-import axios from "axios";
+import {
+  useEffect,
+  useRef,
+  useState,
+}  from "react";
 
+useEffect(() => {
+
+  socketRef.current =
+    new WebSocket(
+      "ws://localhost:5000"
+    );
+
+  socketRef.current.onmessage =
+    async (event: any) => {
+
+      const parsed =
+        JSON.parse(event.data);
+
+      if (
+        parsed.type === "reply"
+      ) {
+
+        setAiReplies(parsed.data);
+
+        if (
+          parsed.data.length > 0
+        ) {
+
+          speak(
+            `${parsed.data[0].speaker} says ${parsed.data[0].text}`
+          );
+
+        }
+
+      }
+
+    };
+
+}, []);
 export default function Home() {
   const [userText, setUserText] = useState("");
   const [aiReplies, setAiReplies] =
@@ -15,6 +52,7 @@ export default function Home() {
 
   const recognitionRef = useRef<any>(null);
   const audioRef = useRef<any>(null);
+  const socketRef = useRef<any>(null);
   const speak = async (text: string) => {
     try {
       if (speaking) return;
@@ -100,9 +138,12 @@ export default function Home() {
 
       try {
         setProcessing(true);
-        const res = await axios.post("http://localhost:5000/chat", {
-          message: transcript.slice(0, 150),
-        });
+        socketRef.current.send(
+  JSON.stringify({
+    message:
+      transcript.slice(0, 150),
+  })
+);
 
         setAiReplies(res.data.reply);
         setDangerLevel((prev) =>
