@@ -25,8 +25,8 @@ let emotionalState = {
   dangerLevel: 20,
   trustLevel: 50,
   crewStress: 30,
+  reactorStability: 100,
 };
-
 const characters = [
   {
     name: "Captain Aris",
@@ -75,8 +75,24 @@ wss.on("connection", (ws) => {
       const parsed =
         JSON.parse(data.toString());
 
-      const message =
-        parsed.message;
+      const message = parsed.message;
+
+      // normalize for keyword checks
+      const lowerMessage = String(message || "").toLowerCase();
+
+      // react to reactor/core mentions
+      if (
+        lowerMessage.includes("reactor") ||
+        lowerMessage.includes("core")
+      ) {
+        emotionalState.reactorStability -= 15;
+      }
+
+      // clamp reactor stability between 0 and 100
+      emotionalState.reactorStability = Math.max(
+        0,
+        Math.min(100, emotionalState.reactorStability)
+      );
 
       conversationHistory.push({
         role: "user",
@@ -110,6 +126,9 @@ Style: ${c.style}
 
 Danger:
 ${emotionalState.dangerLevel}
+
+Reactor Stability:
+${emotionalState.reactorStability}
 
 Stress:
 ${emotionalState.crewStress}

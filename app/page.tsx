@@ -14,16 +14,19 @@ export default function Home() {
   const [speaking, setSpeaking] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [dangerLevel, setDangerLevel] = useState(0);
+  const [systemMode, setSystemMode] =
+  useState("NORMAL");
 
-  const particles = useMemo(() => {
-    return Array.from({ length: 40 }).map((_, i) => ({
-      id: i,
-      left: Math.random() * 100,
-      top: Math.random() * 100,
-      delay: Math.random() * 5,
-      size: Math.random() * 4 + 2,
-    }));
-  }, []);
+  const particles = [
+  { id: 1, left: 10, top: 20, delay: 1, size: 4 },
+  { id: 2, left: 25, top: 40, delay: 2, size: 3 },
+  { id: 3, left: 50, top: 10, delay: 3, size: 5 },
+  { id: 4, left: 70, top: 60, delay: 1, size: 2 },
+  { id: 5, left: 85, top: 30, delay: 4, size: 4 },
+  { id: 6, left: 15, top: 75, delay: 2, size: 3 },
+  { id: 7, left: 40, top: 85, delay: 3, size: 5 },
+  { id: 8, left: 60, top: 45, delay: 1, size: 2 },
+];
 
   const recognitionRef = useRef<any>(null);
   const audioRef = useRef<any>(null);
@@ -93,7 +96,21 @@ export default function Home() {
 
       if (parsed.type === "reply") {
         setAiReplies(parsed.data);
-        setDangerLevel((prev) => Math.min(100, prev + 5));
+        setDangerLevel((prev) => {
+
+  const next =
+    Math.min(100, prev + 5);
+
+  if (next > 70) {
+    setSystemMode("CRITICAL");
+  } else if (next > 40) {
+    setSystemMode("WARNING");
+  } else {
+    setSystemMode("NORMAL");
+  }
+
+  return next;
+});
 
         if (parsed.data.length > 0) {
           const speaker = parsed.data[0].speaker;
@@ -214,7 +231,17 @@ export default function Home() {
       </div>
 
       <div className="absolute inset-0 bg-gradient-to-b from-cyan-500/10 via-transparent to-red-500/10" />
-
+      <div
+  className={`z-10 mb-6 px-6 py-2 rounded-full font-black tracking-widest ${
+    systemMode === "CRITICAL"
+      ? "bg-red-500 text-black"
+      : systemMode === "WARNING"
+      ? "bg-yellow-400 text-black"
+      : "bg-cyan-400 text-black"
+  }`}
+>
+  SYSTEM STATUS: {systemMode}
+</div>
       <h1 className="text-6xl font-black tracking-widest mb-4 z-10">
         EchoVerse
       </h1>
@@ -246,10 +273,13 @@ export default function Home() {
         <div className="w-full bg-zinc-800 h-4 rounded-full overflow-hidden">
 
           <div
-            className="bg-red-500 h-full transition-all duration-500"
-            style={{
-              width: `${dangerLevel}%`,
-            }}
+            className={`h-full transition-all duration-500 ${
+  dangerLevel > 70
+    ? "bg-red-500"
+    : dangerLevel > 40
+    ? "bg-yellow-400"
+    : "bg-cyan-400"
+}`}
           />
 
         </div>
