@@ -10,7 +10,7 @@ export default function Home() {
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [processing, setProcessing] =
-  useState(false);
+  useState(20);
 
   const recognitionRef = useRef<any>(null);
   const speak = async (text: string) => {
@@ -84,6 +84,9 @@ export default function Home() {
         });
 
         setAiReplies(res.data.reply);
+        setDangerLevel((prev) =>
+  Math.min(100, prev + 5)
+);
         if (res.data.reply.length > 0) {
 
   speak(
@@ -134,7 +137,39 @@ export default function Home() {
     !processing &&
     !speaking &&
     "Idle"}
+<div className="mb-6 text-zinc-400">
 
+  {listening && "Listening..."}
+
+  {processing && "Thinking..."}
+
+  {speaking && "Speaking..."}
+
+  {!listening &&
+    !processing &&
+    !speaking &&
+    "Idle"}
+
+</div>
+
+<div className="w-full max-w-xl mb-6">
+
+  <p className="text-red-400 mb-2">
+    Danger Level
+  </p>
+
+  <div className="w-full bg-zinc-800 h-4 rounded-full overflow-hidden">
+
+    <div
+      className="bg-red-500 h-full transition-all duration-500"
+      style={{
+        width: `${dangerLevel}%`,
+      }}
+    />
+
+  </div>
+
+</div>
 </div>
 
       <div className="flex gap-4">

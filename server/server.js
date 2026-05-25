@@ -19,6 +19,11 @@ const model = genAI.getGenerativeModel({
 });
 
 let conversationHistory = [];
+let emotionalState = {
+  dangerLevel: 20,
+  trustLevel: 50,
+  crewStress: 30,
+};
 
 const characters = [
   {
@@ -55,6 +60,34 @@ app.post("/chat", async (req, res) => {
   try {
 
     const { message } = req.body;
+    const lowerMessage =
+  message.toLowerCase();
+
+if (
+  lowerMessage.includes("attack") ||
+  lowerMessage.includes("danger") ||
+  lowerMessage.includes("explode")
+) {
+  emotionalState.dangerLevel += 15;
+  emotionalState.crewStress += 10;
+}
+
+if (
+  lowerMessage.includes("calm") ||
+  lowerMessage.includes("safe")
+) {
+  emotionalState.crewStress -= 10;
+}
+
+emotionalState.dangerLevel = Math.max(
+  0,
+  Math.min(100, emotionalState.dangerLevel)
+);
+
+emotionalState.crewStress = Math.max(
+  0,
+  Math.min(100, emotionalState.crewStress)
+);
 
     conversationHistory.push({
       role: "user",
@@ -87,13 +120,27 @@ Style: ${c.style}
   )
   .join("\n")}
 
+  Current Emotional State:
+
+Danger Level:
+${emotionalState.dangerLevel}
+
+Crew Stress:
+${emotionalState.crewStress}
+
+Trust Level:
+${emotionalState.trustLevel}
 Rules:
 - Stay immersive
 - Never mention AI
 - Keep replies short
 - Maximum 1 sentence each
-- Only the most relevant characters should respond
-
+- React emotionally to danger and stress
+- Characters may disagree with each other
+- Under high danger, responses become urgent
+- Under high stress, engineer may panic
+- Captain prioritizes survival
+- Doctor prioritizes crew safety
 Conversation:
 ${historyText}
 
