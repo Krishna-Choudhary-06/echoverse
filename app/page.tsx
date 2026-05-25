@@ -4,90 +4,99 @@ import {
   useEffect,
   useRef,
   useState,
-}  from "react";
+} from "react";
 
-useEffect(() => {
-
-  socketRef.current =
-    new WebSocket(
-      "ws://localhost:5000"
-    );
-
-  socketRef.current.onmessage =
-    async (event: any) => {
-
-      const parsed =
-        JSON.parse(event.data);
-
-      if (
-        parsed.type === "reply"
-      ) {
-
-        setAiReplies(parsed.data);
-
-        if (
-          parsed.data.length > 0
-        ) {
-
-          speak(
-            `${parsed.data[0].speaker} says ${parsed.data[0].text}`
-          );
-
-        }
-
-      }
-
-    };
-
-}, []);
 export default function Home() {
   const [userText, setUserText] = useState("");
-  const [aiReplies, setAiReplies] =
-  useState<any[]>([]);
+  const [aiReplies, setAiReplies] = useState<any[]>([]);
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
-  const [processing, setProcessing] =
-  useState(false);
+  const [processing, setProcessing] = useState(false);
   const [dangerLevel, setDangerLevel] = useState(0);
 
   const recognitionRef = useRef<any>(null);
   const audioRef = useRef<any>(null);
   const socketRef = useRef<any>(null);
-  const speak = async (text: string) => {
+
+  const characterVoices: any = {
+    "Captain Aris": "jUjRbhZWoMK4aDciW36V",
+    Nova: "EXAVITQu4EsNXjlpc0k5",
+    "Dr. Lyra": "21m00Tcm4TlvDq3XWmlC",
+  };
+
+  const speak = async (speaker: string, text: string) => {
     try {
       if (speaking) return;
       setSpeaking(true);
 
-      // Use browser's Web Speech API for text-to-speech
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 0.9;
-      utterance.pitch = 1;
-      utterance.volume = 1;
+      const voiceId = characterVoices[speaker] || characterVoices["Captain Aris"];
 
-      // Wait for speech to complete
-      await new Promise((resolve) => {
-        utterance.onend = () => {
-          if (audioRef.current === utterance) {
-            setSpeaking(false);
-            setTimeout(() => {
-              startListening();
-            }, 300);
-          }
-          resolve(null);
-        };
-        audioRef.current = utterance;
-        window.speechSynthesis.speak(utterance);
-      });
+      const response = await fetch(
+        `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+        {
+          method: "POST",
+          headers: {
+            Accept: "audio/mpeg",
+            "Content-Type": "application/json",
+            "xi-api-key": process.env.NEXT_PUBLIC_ELEVENLABS_API_KEY || "",
+          },
+          body: JSON.stringify({
+            text,
+            model_id: "eleven_turbo_v2_5",
+          }),
+        }
+      );
 
-      setSpeaking(false);
-      setTimeout(() => {
-        startListening();
-      }, 400);
+      if (!response.ok) {
+        console.log("ElevenLabs request failed");
+        setSpeaking(false);
+        return;
+      }
+
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
+
+      audio.onended = () => {
+        if (audioRef.current === audio) {
+          setSpeaking(false);
+          setTimeout(() => {
+            startListening();
+          }, 300);
+        }
+      };
+
+      audioRef.current = audio;
+      await audio.play();
     } catch (error) {
       console.log(error);
       setSpeaking(false);
     }
   };
+
+  useEffect(() => {
+    socketRef.current = new WebSocket("ws://localhost:5000");
+
+    socketRef.current.onmessage = async (event: any) => {
+      const parsed = JSON.parse(event.data);
+
+      if (parsed.type === "reply") {
+        setAiReplies(parsed.data);
+        setDangerLevel((prev) => Math.min(100, prev + 5));
+
+        if (parsed.data.length > 0) {
+          const speaker = parsed.data[0].speaker;
+          const text = parsed.data[0].text;
+          speak(speaker, text);
+        }
+        setProcessing(false);
+      }
+    };
+
+    return () => {
+      socketRef.current?.close();
+    };
+  }, []);
 
   const startListening = () => {
     if (speaking && audioRef.current) {
@@ -126,6 +135,7 @@ export default function Home() {
     recognition.onresult = async (event: any) => {
       let transcript = "";
       if (processing || speaking) return;
+      
       for (let i = event.resultIndex; i < event.results.length; i++) {
         transcript += event.results[i][0].transcript;
       }
@@ -139,26 +149,13 @@ export default function Home() {
       try {
         setProcessing(true);
         socketRef.current.send(
-  JSON.stringify({
-    message:
-      transcript.slice(0, 150),
-  })
-);
-
-        setAiReplies(res.data.reply);
-        setDangerLevel((prev) =>
-  Math.min(100, prev + 5)
-);
-        if (res.data.reply.length > 0) {
-
-  speak(
-    `${res.data.reply[0].speaker} says ${res.data.reply[0].text}`
-  );
-
-}
-        setProcessing(false);
+          JSON.stringify({
+            message: transcript.slice(0, 150),
+          })
+        );
       } catch (error) {
         console.log(error);
+        setProcessing(false);
       }
     };
 
@@ -190,11 +187,8 @@ export default function Home() {
       <div className="mb-6 text-zinc-400">
         {listening && "Listening..."}
         {processing && "Thinking..."}
-        {speaking && " (You can interrupt now)"}
-        {!listening &&
-          !processing &&
-          !speaking &&
-          "Idle"}
+        {speaking && `Speaking as ${aiReplies[0]?.speaker || ""}...`}
+        {!listening && !processing && !speaking && "Idle"}
       </div>
 
       <div className="w-full max-w-xl mb-6">
@@ -237,19 +231,22 @@ export default function Home() {
         <p className="text-zinc-400 text-lg">AI:</p>
         <div className="space-y-4">
 
-  {aiReplies.map((reply, index) => (
+      {aiReplies.map((reply, index) => (
 
-    <div
-      key={index}
-      className="bg-zinc-900 p-4 rounded-xl"
-    >
-      <p className="text-blue-400 font-bold">
+    <div key={index} className="bg-zinc-900 p-4 rounded-xl">
+      <p
+        className={`font-bold ${
+          reply.speaker === "Captain Aris"
+            ? "text-red-400"
+            : reply.speaker === "Nova"
+            ? "text-yellow-400"
+            : "text-green-400"
+        }`}
+      >
         {reply.speaker}
       </p>
 
-      <p className="text-2xl">
-        {reply.text}
-      </p>
+      <p className="text-2xl">{reply.text}</p>
     </div>
 
   ))}
