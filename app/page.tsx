@@ -10,24 +10,36 @@ export default function Home() {
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [processing, setProcessing] =
-  useState(20);
+  useState(false);
+  const [dangerLevel, setDangerLevel] = useState(0);
 
   const recognitionRef = useRef<any>(null);
+  const audioRef = useRef<any>(null);
   const speak = async (text: string) => {
     try {
       if (speaking) return;
       setSpeaking(true);
 
-      // ElevenLabs is blocked, skip audio and just restart listening
-      const cleanedText = text
-        .replace(/\*/g, "")
-        .replace(/#/g, "")
-        .slice(0, 200);
+      // Use browser's Web Speech API for text-to-speech
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 0.9;
+      utterance.pitch = 1;
+      utterance.volume = 1;
 
-      console.log("Speaking:", cleanedText);
-
-      // Simulate speech delay
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      // Wait for speech to complete
+      await new Promise((resolve) => {
+        utterance.onend = () => {
+          if (audioRef.current === utterance) {
+            setSpeaking(false);
+            setTimeout(() => {
+              startListening();
+            }, 300);
+          }
+          resolve(null);
+        };
+        audioRef.current = utterance;
+        window.speechSynthesis.speak(utterance);
+      });
 
       setSpeaking(false);
       setTimeout(() => {
@@ -40,6 +52,15 @@ export default function Home() {
   };
 
   const startListening = () => {
+    if (speaking && audioRef.current) {
+
+  audioRef.current.pause();
+
+  audioRef.current.currentTime = 0;
+
+  setSpeaking(false);
+
+}
     const SpeechRecognition =
       window.SpeechRecognition ||
       (window as any).webkitSpeechRecognition;
@@ -126,51 +147,29 @@ export default function Home() {
     <main className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-8">
       <h1 className="text-5xl font-bold mb-10">EchoVerse</h1>
       <div className="mb-6 text-zinc-400">
+        {listening && "Listening..."}
+        {processing && "Thinking..."}
+        {speaking && " (You can interrupt now)"}
+        {!listening &&
+          !processing &&
+          !speaking &&
+          "Idle"}
+      </div>
 
-  {listening && "Listening..."}
+      <div className="w-full max-w-xl mb-6">
+        <p className="text-red-400 mb-2">
+          Danger Level
+        </p>
 
-  {processing && "Thinking..."}
-
-  {speaking && "Speaking..."}
-
-  {!listening &&
-    !processing &&
-    !speaking &&
-    "Idle"}
-<div className="mb-6 text-zinc-400">
-
-  {listening && "Listening..."}
-
-  {processing && "Thinking..."}
-
-  {speaking && "Speaking..."}
-
-  {!listening &&
-    !processing &&
-    !speaking &&
-    "Idle"}
-
-</div>
-
-<div className="w-full max-w-xl mb-6">
-
-  <p className="text-red-400 mb-2">
-    Danger Level
-  </p>
-
-  <div className="w-full bg-zinc-800 h-4 rounded-full overflow-hidden">
-
-    <div
-      className="bg-red-500 h-full transition-all duration-500"
-      style={{
-        width: `${dangerLevel}%`,
-      }}
-    />
-
-  </div>
-
-</div>
-</div>
+        <div className="w-full bg-zinc-800 h-4 rounded-full overflow-hidden">
+          <div
+            className="bg-red-500 h-full transition-all duration-500"
+            style={{
+              width: `${dangerLevel}%`,
+            }}
+          />
+        </div>
+      </div>
 
       <div className="flex gap-4">
         <button
