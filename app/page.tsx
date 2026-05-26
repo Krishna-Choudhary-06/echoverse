@@ -34,6 +34,14 @@ const SPEAKER_COLORS: Record<string, string> = {
   "Dr. Lyra": "text-green-400",
 };
 
+// ── Character voice mapping (ElevenLabs voice IDs) ───────────────────────────
+
+const characterVoices: Record<string, string> = {
+  "Captain Aris": "pNInz6obpgqjVWtgYuOC", // Adam (deep, tactical)
+  "Nova": "EXAVITQu4vr4xnSDxMaL",        // Sarah (nervous/fast)
+  "Dr. Lyra": "21m00Tcm4TlvDq8ikWAM",    // Rachel (calm/empathetic)
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function Home() {
@@ -49,6 +57,8 @@ export default function Home() {
   // ── Refs ─────────────────────────────────────────────────────────────────────
   const conversationRef = useRef<Awaited<ReturnType<typeof Conversation.startSession>> | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const isPlayingRef = useRef<boolean>(false);
 
   // ── Derive UI labels from state ──────────────────────────────────────────────
   const statusLabel = (() => {
@@ -57,6 +67,74 @@ export default function Home() {
     if (agentMode === "speaking") return `Speaking as ${aiReplies[0]?.speaker || "crew"}...`;
     return "Listening...";
   })();
+
+  // ── Dialogue Audio Playback & Queue Management ────────────────────────────────
+
+  const cancelPlayback = useCallback(() => {
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current = null;
+    }
+    isPlayingRef.current = false;
+  }, []);
+
+  const playCharacterDialogue = useCallback((speaker: string, text: string) => {
+    return new Promise<void>(async (resolve) => {
+      try {
+        const voiceId = characterVoices[speaker] || characterVoices["Captain Aris"];
+        const res = await fetch("http://localhost:5000/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, voiceId })
+        });
+        if (!res.ok) throw new Error("TTS request failed");
+
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        currentAudioRef.current = audio;
+
+        audio.onended = () => {
+          URL.revokeObjectURL(url);
+          currentAudioRef.current = null;
+          resolve();
+        };
+
+        audio.onerror = () => {
+          URL.revokeObjectURL(url);
+          currentAudioRef.current = null;
+          resolve();
+        };
+
+        await audio.play();
+      } catch (err) {
+        console.error("Audio playback error:", err);
+        resolve();
+      }
+    });
+  }, []);
+
+  const enqueueDialogue = useCallback(async (replies: AgentReply[]) => {
+    cancelPlayback();
+    isPlayingRef.current = true;
+
+    for (const reply of replies) {
+      if (!isPlayingRef.current) break;
+      await playCharacterDialogue(reply.speaker, reply.text);
+    }
+
+    isPlayingRef.current = false;
+  }, [cancelPlayback, playCharacterDialogue]);
+
+  const enqueueDialogueRef = useRef(enqueueDialogue);
+  useEffect(() => {
+    enqueueDialogueRef.current = enqueueDialogue;
+  }, [enqueueDialogue]);
+
+  const cancelPlaybackRef = useRef(cancelPlayback);
+  useEffect(() => {
+    cancelPlaybackRef.current = cancelPlayback;
+  }, [cancelPlayback]);
 
   // ── WebSocket: keep real-time streaming UI + emotional state updates ─────────
   useEffect(() => {
@@ -83,6 +161,9 @@ export default function Home() {
             else if (danger > 40) setSystemMode("WARNING");
             else setSystemMode("NORMAL");
           }
+
+          // Trigger sequential playback
+          enqueueDialogueRef.current(parsed.data);
         }
       } catch {
         // non-JSON frame, ignore
@@ -134,10 +215,11 @@ export default function Home() {
         },
 
         // ── Message handler: user transcript + agent text ────────────────────
-        // ElevenLabs fires this for both user speech (transcription)
-        // and agent text (from our Custom LLM endpoint).
         onMessage: ({ message, source }: { message: string; source: string }) => {
           if (source === "user") {
+            // Cancel any active TTS playback since user is speaking / interrupting
+            cancelPlaybackRef.current();
+
             // User speech transcription from ElevenLabs STT
             setUserTranscript(message);
 
@@ -150,14 +232,14 @@ export default function Home() {
           }
 
           if (source === "ai") {
-            // AI response text — try to parse our JSON format for speaker display
+            // Deprecated path: ElevenLabs is now returning silent responses,
+            // but we keep parsing logic here as a safe fallback just in case.
             try {
               const parsed: AgentReply[] = JSON.parse(message);
               if (Array.isArray(parsed)) {
                 setAiReplies(parsed);
               }
             } catch {
-              // Plain text fallback
               setAiReplies([{ speaker: "Captain Aris", text: message }]);
             }
           }
@@ -173,6 +255,7 @@ export default function Home() {
 
   // ── End ElevenLabs Speech Engine Session ─────────────────────────────────────
   const endSession = useCallback(async () => {
+    cancelPlayback();
     if (!conversationRef.current) return;
     try {
       await conversationRef.current.endSession();
@@ -182,11 +265,12 @@ export default function Home() {
     conversationRef.current = null;
     setConnectionStatus("disconnected");
     setAgentMode("listening");
-  }, []);
+  }, [cancelPlayback]);
 
   // ── Cleanup on unmount ───────────────────────────────────────────────────────
   useEffect(() => {
     return () => {
+      cancelPlaybackRef.current();
       conversationRef.current?.endSession().catch(() => {});
     };
   }, []);

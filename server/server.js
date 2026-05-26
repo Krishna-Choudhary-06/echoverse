@@ -179,93 +179,103 @@ app.get("/signed-url", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// REST: /tts  — proxy ElevenLabs TTS requests to avoid exposing API key
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.post("/tts", async (req, res) => {
+  const { text, voiceId } = req.body;
+  const apiKey = process.env.ELEVENLABS_API_KEY;
+
+  if (!apiKey) {
+    return res.status(500).json({ error: "ELEVENLABS_API_KEY is not configured" });
+  }
+
+  try {
+    const response = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "xi-api-key": apiKey,
+        },
+        body: JSON.stringify({
+          text: text,
+          model_id: "eleven_monolingual_v1",
+          voice_settings: {
+            stability: 0.5,
+            similarity_boost: 0.75,
+          },
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error("ElevenLabs TTS error:", errText);
+      return res.status(response.status).json({ error: "Failed to generate TTS from ElevenLabs" });
+    }
+
+    res.setHeader("Content-Type", "audio/mpeg");
+    const arrayBuffer = await response.arrayBuffer();
+    res.send(Buffer.from(arrayBuffer));
+  } catch (err) {
+    console.error("TTS endpoint error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // REST: /v1/chat/completions  — OpenAI-compatible Custom LLM endpoint
-// ElevenLabs calls this as the agent's LLM backend.
-// Translates ElevenLabs messages → Ollama multi-agent → SSE stream back.
+// Silent response to make ElevenLabs Speech Engine not speak final responses.
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.post("/v1/chat/completions", async (req, res) => {
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.flushHeaders?.();
+  const isStreaming = req.body.stream === true;
+  if (isStreaming) {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders?.();
 
-  try {
-    const messages = req.body.messages || [];
-
-    // Extract the last user message from the OpenAI-format messages array
-    const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
-    const userText = typeof lastUserMsg?.content === "string"
-      ? lastUserMsg.content
-      : Array.isArray(lastUserMsg?.content)
-        ? lastUserMsg.content.map((c) => (c.text || "")).join(" ")
-        : "Hello crew";
-
-    const ollamaStream = await generateCrewResponse(userText.slice(0, 150));
-
-    let fullText = "";
-    let chunkIndex = 0;
     const completionId = `chatcmpl-${Date.now()}`;
+    const chunk = {
+      id: completionId,
+      object: "chat.completion.chunk",
+      created: Math.floor(Date.now() / 1000),
+      model: "llama3",
+      choices: [{ index: 0, delta: { content: " " }, finish_reason: null }]
+    };
+    res.write(`data: ${JSON.stringify(chunk)}\n\n`);
 
-    for await (const chunk of ollamaStream) {
-      const chunkText = chunk?.message?.content ?? "";
-      if (!chunkText) continue;
-      fullText += chunkText;
-
-      // Format as OpenAI Chat Completions streaming chunk
-      const sseChunk = {
-        id: completionId,
-        object: "chat.completion.chunk",
-        created: Math.floor(Date.now() / 1000),
-        model: "llama3",
-        choices: [
-          {
-            index: 0,
-            delta: { content: chunkText },
-            finish_reason: null,
-          },
-        ],
-      };
-
-      res.write(`data: ${JSON.stringify(sseChunk)}\n\n`);
-      chunkIndex++;
-    }
-
-    // Parse and store in conversation history
-    const cleanText = fullText
-      .replace(/```json/g, "")
-      .replace(/```/g, "")
-      .trim();
-
-    let parsedReply = [];
-    try {
-      parsedReply = JSON.parse(cleanText);
-    } catch {
-      parsedReply = [{ speaker: "Captain Aris", text: cleanText }];
-    }
-
-    conversationHistory.push({
-      role: "assistant",
-      text: JSON.stringify(parsedReply),
-    });
-
-    updateEmotionalState(parsedReply);
-
-    // Send final [DONE] chunk
     const doneChunk = {
       id: completionId,
       object: "chat.completion.chunk",
       created: Math.floor(Date.now() / 1000),
       model: "llama3",
-      choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+      choices: [{ index: 0, delta: {}, finish_reason: "stop" }]
     };
     res.write(`data: ${JSON.stringify(doneChunk)}\n\n`);
     res.write("data: [DONE]\n\n");
     res.end();
-  } catch (err) {
-    console.error("/v1/chat/completions error:", err);
-    res.write(`data: ${JSON.stringify({ error: "LLM generation failed" })}\n\n`);
-    res.end();
+  } else {
+    res.setHeader("Content-Type", "application/json");
+    res.json({
+      id: `chatcmpl-${Date.now()}`,
+      object: "chat.completion",
+      created: Math.floor(Date.now() / 1000),
+      model: "llama3",
+      choices: [
+        {
+          index: 0,
+          message: {
+            role: "assistant",
+            content: " "
+          },
+          finish_reason: "stop"
+        }
+      ]
+    });
   }
 });
 
